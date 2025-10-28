@@ -7,9 +7,19 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 const responseSchema = {
   type: Type.OBJECT,
   properties: {
-    bestTip: {
+    safeTip: {
       type: Type.OBJECT,
-      description: "The single best betting tip with the highest confidence.",
+      description: "The single safest betting tip with a very high probability of success, suitable for accumulators.",
+      properties: {
+        bet: { type: Type.STRING, description: "The type of bet (e.g., 'Match Result', 'Total Goals')." },
+        value: { type: Type.STRING, description: "The predicted outcome (e.g., 'W1', 'TO 2.5')." },
+        confidence: { type: Type.INTEGER, description: "Confidence level from 0 to 100." },
+      },
+      required: ["bet", "value", "confidence"],
+    },
+    valueTip: {
+      type: Type.OBJECT,
+      description: "A tip that represents excellent value. This is a well-reasoned bet where the AI's analysis indicates a higher probability of success than typical market odds might suggest, offering a powerful and accurate betting opportunity.",
       properties: {
         bet: { type: Type.STRING, description: "The type of bet (e.g., 'Match Result', 'Total Goals')." },
         value: { type: Type.STRING, description: "The predicted outcome (e.g., 'W1', 'TO 2.5')." },
@@ -34,8 +44,16 @@ const responseSchema = {
       type: Type.STRING,
       description: "A detailed, professional analysis of the match in Markdown format, covering team form, tactics, key players, and reasoning for the prediction.",
     },
+    correctScores: {
+      type: Type.ARRAY,
+      description: "A list of the three most likely correct scores for the match.",
+      items: {
+        type: Type.STRING,
+        description: "A correct score prediction, e.g., '2-1'."
+      }
+    }
   },
-  required: ["bestTip", "tips", "analysis"],
+  required: ["safeTip", "valueTip", "tips", "analysis", "correctScores"],
 };
 
 
@@ -58,8 +76,19 @@ You are a world-class professional football analyst providing expert betting ins
     - **Team News, Injuries & Suspensions:** This is crucial. Access the most recent team news to confirm player availability. List any key players who are injured, suspended, or likely to be rested. The absence of a star player can completely change the outcome.
     - **League Context & Motivation:** Consider their current league positions, importance of the match (e.g., relegation battle, title race, derby), and potential for squad rotation.
     - **Tactical Matchup:** Compare their likely formations, playing styles (e.g., possession-based vs. counter-attacking), and how they might counter each other's strengths.
-2.  **Generate Betting Tips:** Provide a wide variety of betting tips with a confidence score (0-100) for each. Include main markets, but also explore team totals, corners, and HT/FT results if there are strong indicators.
-3.  **Select the Best Tip:** Identify the single tip you are most confident in. This should be your "Best Tip".
+2.  **Generate Betting Tips:** Based on your analysis, provide a comprehensive list of at least 10-15 betting tips with a confidence score (0-100) for each. Ensure you cover a wide variety of markets. The 'tips' array in your JSON response **must** include predictions for the following categories where sufficient data exists to make a confident prediction:
+    - **Match Result** (W1, X, W2)
+    - **Double Chance** (1X, 12, 2X)
+    - **BTTS** (BTTS, BTTS-NO)
+    - **Total Goals** (e.g., TO 2.5, TU 3.5)
+    - **Team Total Goals** (e.g., 1TO 1.5, 2TU 0.5)
+    - **Asian Handicap** (e.g., H -1.5, A +0.5)
+    - **Total Corners** (e.g., CO 9.5, CU 10.5)
+    - **Team Corners** (e.g., 1CO 5.5, 2CU 3.5)
+    - **HT/FT Result** (e.g., W1/W1, X/W2)
+3.  **Generate Key Tips for Accumulators:**
+    - **Safe Tip:** Identify the single safest tip with the highest probability of success (typically confidence > 80%). This is a foundational bet for a low-risk accumulator. It must be returned in the 'safeTip' field.
+    - **Value Tip:** Identify a tip that represents excellent value. This is where your analysis indicates a significantly higher probability of success than what typical market odds would suggest. It should be a well-reasoned bet that has a strong chance of winning but is also priced attractively. Avoid extremely risky long-shots; focus on 'mispriced' opportunities with solid analytical backing. It must be returned in the 'valueTip' field.
 4.  **Write a Detailed Preview:** Compose a professional, in-depth match preview in Markdown format. Structure it with these sections:
     - **Match Preview:** Briefly introduce the match, its context, and importance.
     - **Recent Form Analysis:** Detail the recent performance of both teams.
@@ -68,10 +97,11 @@ You are a world-class professional football analyst providing expert betting ins
     - **Tactical Breakdown:** Analyze the expected tactical battle.
     - **Key Players:** Identify one player from each team who could be decisive.
     - **Prediction Rationale:** Conclude with a summary of your reasoning for the predictions.
-    - **Betting Odds Analysis:** Compare your analysis with typical market odds (e.g., from a major bookmaker). Highlight where you see value and suggest potential tips on secondary markets like corners, cards, or HT/FT results if there are strong indicators.
+    - **Betting Odds Analysis:** Compare your analysis with typical market odds (e.g., from a major bookmaker). This comparison is critical for identifying value. Highlight where your calculated confidence diverges positively from the implied probability of the odds. This is the foundation for your 'Value Tip'. Suggest potential tips on secondary markets like corners, cards, or HT/FT results if there are strong indicators.
+5.  **Predict Correct Scores:** Based on your analysis, provide a list of the three most probable final scores.
 
 **JSON Output Instructions & Value Formatting:**
-Return ONLY the JSON object. The JSON object must conform to the provided schema. The analysis must be a single string with markdown formatting.
+Return ONLY the JSON object. The JSON object must conform to the provided schema, including the 'safeTip', 'valueTip', and 'correctScores' array. The analysis must be a single string with markdown formatting.
 **Crucially, for the 'value' field in all tips, you MUST use the following standardized abbreviations. Do NOT use team names or descriptive text.**
 - **Match Result:** Use 'W1' for Home Win, 'X' for Draw, 'W2' for Away Win.
 - **Double Chance:** Use '1X' for Home Win or Draw, '12' for Home or Away Win, '2X' for Away Win or Draw.

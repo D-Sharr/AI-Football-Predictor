@@ -25,7 +25,7 @@ const App: React.FC = () => {
   const [availableLeagues, setAvailableLeagues] = useState<string[]>([]);
   const [selectedLeague, setSelectedLeague] = useState<string>('all');
 
-  const [theme, setTheme] = useState('dark');
+  const [theme, setTheme] = useState('light');
 
   // State to hold all predictions, keyed by fixture ID
   const [predictions, setPredictions] = useState<{ [key: number]: PredictionState }>({});
@@ -40,8 +40,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const initialTheme = savedTheme || (prefersDark ? 'dark' : 'light');
+    const initialTheme = savedTheme || 'light';
     setTheme(initialTheme);
   }, []);
 
@@ -64,8 +63,8 @@ const App: React.FC = () => {
     setFixtures([]);
     setAvailableLeagues([]);
     setSelectedLeague('all');
-    // Clear old predictions when date changes
-    setPredictions({});
+    // Predictions are now persisted across date changes.
+    // setPredictions({}); // This line is removed to persist predictions.
     try {
       const dailyFixtures = await getDailyFixtures(date);
       
@@ -167,6 +166,7 @@ const App: React.FC = () => {
   
   const handleRefresh = useCallback(async () => {
     clearCacheForDate(selectedDate);
+    setPredictions({}); // Clear predictions only on manual refresh
     await fetchFixtures(selectedDate);
   }, [selectedDate, fetchFixtures]);
 

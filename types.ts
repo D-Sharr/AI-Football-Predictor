@@ -33,6 +33,24 @@ export interface Fixture {
     home: number | null;
     away: number | null;
   };
+  score?: {
+    halftime: {
+      home: number | null;
+      away: number | null;
+    };
+    fulltime: {
+      home: number | null;
+      away: number | null;
+    };
+    extratime: {
+      home: number | null;
+      away: number | null;
+    };
+    penalty: {
+      home: number | null;
+      away: number | null;
+    };
+  };
 }
 
 export interface Tip {
@@ -42,9 +60,11 @@ export interface Tip {
 }
 
 export interface PredictionResult {
-  bestTip: Tip;
+  safeTip: Tip;
+  valueTip: Tip;
   tips: Tip[];
   analysis: string;
+  correctScores?: string[];
 }
 
 export interface PredictionState {
