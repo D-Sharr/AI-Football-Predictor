@@ -1,0 +1,5 @@
+{
+  "name": "AI Football Predictor",
+  "description": "Get daily football match fixtures from top leagues and receive AI-powered predictions, analysis, and betting tips for each game using Google's Gemini API.",
+  "requestFramePermissions": []
+}
