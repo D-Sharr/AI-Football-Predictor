@@ -5,12 +5,11 @@ import FixtureItem from './FixtureItem';
 interface FixtureListProps {
   fixtures: Fixture[];
   predictions: { [key: number]: PredictionState };
-  onGetPrediction: (fixture: Fixture) => void;
   onAnalyzeLeague: (fixtures: Fixture[]) => void;
   onGetAccumulatorTips: (fixtures: Fixture[], leagueName: string) => void;
 }
 
-const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onGetPrediction, onAnalyzeLeague, onGetAccumulatorTips }) => {
+const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onAnalyzeLeague, onGetAccumulatorTips }) => {
   const [openLeagues, setOpenLeagues] = useState<Set<string>>(new Set());
   
   const groupedFixtures: { [key: string]: Fixture[] } = fixtures.reduce((acc, fixture) => {
@@ -123,7 +122,6 @@ const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onGetP
                         key={fixture.fixture.id} 
                         fixture={fixture} 
                         predictionState={predictions[fixture.fixture.id]}
-                        onGetPrediction={onGetPrediction}
                       />
                     ))}
                   </div>

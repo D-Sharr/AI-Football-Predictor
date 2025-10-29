@@ -4,7 +4,6 @@ import { Fixture, PredictionState, Tip } from '../types';
 interface FixtureItemProps {
   fixture: Fixture;
   predictionState?: PredictionState;
-  onGetPrediction: (fixture: Fixture) => void;
 }
 
 const SimpleMarkdown: React.FC<{ text: string }> = ({ text }) => {
@@ -76,7 +75,7 @@ const CircularProgress: React.FC<{ confidence: number }> = ({ confidence }) => {
   };
 
 
-const FixtureItem: React.FC<FixtureItemProps> = ({ fixture, predictionState, onGetPrediction }) => {
+const FixtureItem: React.FC<FixtureItemProps> = ({ fixture, predictionState }) => {
   const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false);
 
   const { result: prediction, isLoading, error } = predictionState || { result: null, isLoading: false, error: null };
@@ -91,10 +90,6 @@ const FixtureItem: React.FC<FixtureItemProps> = ({ fixture, predictionState, onG
   const finishedMatchStatuses = ['FT', 'AET', 'PEN'];
   const isFinished = finishedMatchStatuses.includes(fixture.fixture.status.short);
 
-  const handleGetPrediction = () => {
-    onGetPrediction(fixture);
-  };
-  
   const validateTip = (tip: Tip, fixture: Fixture): 'correct' | 'incorrect' | 'unknown' | 'uncheckable' => {
     const homeGoals = fixture.goals.home;
     const awayGoals = fixture.goals.away;
@@ -235,15 +230,7 @@ const FixtureItem: React.FC<FixtureItemProps> = ({ fixture, predictionState, onG
                         </div>
                     )}
                 </div>
-            ) : (
-                <button
-                    onClick={handleGetPrediction}
-                    className="flex items-center justify-center space-x-1 bg-brand-accent text-white px-2 py-1 rounded-md hover:bg-teal-500 transition-colors"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M10 3.5a1.5 1.5 0 013 0V4a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-.5a1.5 1.5 0 000 3h.5a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 00-1-1v-.5a1.5 1.5 0 01-3 0v.5a1 1 0 00-1 1H6a1 1 0 01-1-1v-3a1 1 0 011-1h.5a1.5 1.5 0 000-3H6a1 1 0 01-1-1V6a1 1 0 011-1h3a1 1 0 001-1v-.5z" /></svg>
-                    <span>AI Tips</span>
-                </button>
-            )}
+            ) : null}
         </div>
         
         {/* Round info */}

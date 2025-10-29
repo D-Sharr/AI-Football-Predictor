@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Fixture, PredictionState } from './types';
+import { Fixture, PredictionState, BatchPrediction } from './types';
 import { getDailyFixtures, clearCacheForDate } from './services/footballApiService';
-import { getMatchPrediction, getAccumulatorPrediction } from './services/geminiService';
+import { getLeaguePredictions, getAccumulatorPrediction } from './services/geminiService';
 import Header from './components/Header';
 import FixtureList from './components/FixtureList';
 import Loader from './components/Loader';
@@ -63,8 +63,6 @@ const App: React.FC = () => {
     setFixtures([]);
     setAvailableLeagues([]);
     setSelectedLeague('all');
-    // Predictions are now persisted across date changes.
-    // setPredictions({}); // This line is removed to persist predictions.
     try {
       const dailyFixtures = await getDailyFixtures(date);
       
@@ -133,32 +131,6 @@ const App: React.FC = () => {
     setSelectedLeague(league);
   };
 
-  const handleGetPrediction = useCallback(async (fixture: Fixture) => {
-    const fixtureId = fixture.fixture.id;
-    if (predictions[fixtureId]?.result || predictions[fixtureId]?.isLoading) {
-        return;
-    }
-
-    setPredictions(prev => ({
-        ...prev,
-        [fixtureId]: { result: null, isLoading: true, error: null }
-    }));
-
-    try {
-        const result = await getMatchPrediction(fixture);
-        setPredictions(prev => ({
-            ...prev,
-            [fixtureId]: { result, isLoading: false, error: null }
-        }));
-    } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
-        setPredictions(prev => ({
-            ...prev,
-            [fixtureId]: { result: null, isLoading: false, error: errorMessage }
-        }));
-    }
-  }, [predictions]);
-
   const filteredFixtures = selectedLeague === 'all'
     ? fixtures
     : fixtures.filter(f => `${f.league.name} - ${f.league.country}` === selectedLeague);
@@ -186,10 +158,45 @@ const App: React.FC = () => {
   };
 
   const handleAnalyzeLeague = useCallback(async (fixturesInLeague: Fixture[]) => {
-    fixturesInLeague.forEach(fixture => {
-        handleGetPrediction(fixture);
+    const fixturesToAnalyze = fixturesInLeague.filter(f => !predictions[f.fixture.id]?.result && !predictions[f.fixture.id]?.isLoading);
+    if (fixturesToAnalyze.length === 0) return;
+
+    setPredictions(prev => {
+        const newPredictions = { ...prev };
+        fixturesToAnalyze.forEach(fixture => {
+            newPredictions[fixture.fixture.id] = { result: null, isLoading: true, error: null };
+        });
+        return newPredictions;
     });
-  }, [handleGetPrediction]);
+
+    try {
+        const results: BatchPrediction[] = await getLeaguePredictions(fixturesToAnalyze);
+        setPredictions(prev => {
+            const newPredictions = { ...prev };
+            results.forEach(item => {
+                if (newPredictions[item.fixtureId]) {
+                    newPredictions[item.fixtureId] = { result: item.prediction, isLoading: false, error: null };
+                }
+            });
+             // Handle any fixtures that were sent for analysis but didn't get a result back
+            fixturesToAnalyze.forEach(f => {
+                if (!results.some(r => r.fixtureId === f.fixture.id)) {
+                    newPredictions[f.fixture.id] = { result: null, isLoading: false, error: "AI did not return a prediction for this match." };
+                }
+            });
+            return newPredictions;
+        });
+    } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
+        setPredictions(prev => {
+            const newPredictions = { ...prev };
+            fixturesToAnalyze.forEach(fixture => {
+                newPredictions[fixture.fixture.id] = { result: null, isLoading: false, error: errorMessage };
+            });
+            return newPredictions;
+        });
+    }
+  }, [predictions]);
 
 
   const handleGetAccumulatorTips = useCallback(async (fixturesInLeague: Fixture[], leagueName: string) => {
@@ -251,7 +258,6 @@ const App: React.FC = () => {
             <FixtureList 
               fixtures={filteredFixtures} 
               predictions={predictions}
-              onGetPrediction={handleGetPrediction}
               onAnalyzeLeague={handleAnalyzeLeague}
               onGetAccumulatorTips={handleGetAccumulatorTips}
             />

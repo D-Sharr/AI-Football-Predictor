@@ -72,3 +72,8 @@ export interface PredictionState {
   isLoading: boolean;
   error: string | null;
 }
+
+export interface BatchPrediction {
+  fixtureId: number;
+  prediction: PredictionResult;
+}

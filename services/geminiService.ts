@@ -1,10 +1,10 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { Fixture, PredictionResult } from "../types";
+import { Fixture, PredictionResult, BatchPrediction } from "../types";
 
 // The API key is injected from environment variables
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
 
-const responseSchema = {
+const singlePredictionSchema = {
   type: Type.OBJECT,
   properties: {
     safeTip: {
@@ -57,51 +57,56 @@ const responseSchema = {
 };
 
 
-export async function getMatchPrediction(fixture: Fixture): Promise<PredictionResult> {
-  const { league, teams, fixture: fixtureDetails } = fixture;
+const batchResponseSchema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      fixtureId: {
+        type: Type.INTEGER,
+        description: "The unique ID of the fixture being analyzed."
+      },
+      prediction: singlePredictionSchema,
+    },
+    required: ["fixtureId", "prediction"],
+  }
+};
+
+
+export async function getLeaguePredictions(fixtures: Fixture[]): Promise<BatchPrediction[]> {
+  const fixtureList = fixtures.map(f =>
+    `- **Match:** ${f.teams.home.name} vs ${f.teams.away.name} (${f.league.name})\n  - **Fixture ID:** ${f.fixture.id}\n  - **Date:** ${new Date(f.fixture.date).toUTCString()}`
+  ).join('\n');
 
   const prompt = `
-You are a world-class professional football analyst providing expert betting insights. Analyze the following match and return your analysis in a structured JSON format. Your knowledge is up-to-date.
+You are a world-class professional football analyst providing expert betting insights. Analyze ALL of the following matches and return your analysis in a structured JSON array format. Your knowledge is up-to-date.
 
-**Match Information:**
-- **League:** ${league.name} (${league.country})
-- **Round:** ${league.round}
-- **Match:** ${teams.home.name} (Home) vs ${teams.away.name} (Away)
-- **Date:** ${new Date(fixtureDetails.date).toUTCString()}
+**Matches to Analyze:**
+${fixtureList}
 
 **Your Task:**
-1.  **Deep Dive Analysis:** Perform a comprehensive analysis by considering the following critical factors.
-    - **Current Form & Momentum:** Analyze the last 5-10 official matches for both teams. Note winning/losing streaks, goals scored/conceded, and overall performance trends.
-    - **Head-to-Head (H2H) Deep Dive:** Examine the last 5-10 meetings between these teams. Pay close attention to who was home/away for each match, the final scores, and any recurring patterns (e.g., high-scoring games, one team's dominance).
-    - **Team News, Injuries & Suspensions:** This is crucial. Access the most recent team news to confirm player availability. List any key players who are injured, suspended, or likely to be rested. The absence of a star player can completely change the outcome.
-    - **League Context & Motivation:** Consider their current league positions, importance of the match (e.g., relegation battle, title race, derby), and potential for squad rotation.
-    - **Tactical Matchup:** Compare their likely formations, playing styles (e.g., possession-based vs. counter-attacking), and how they might counter each other's strengths.
-2.  **Generate Betting Tips:** Based on your analysis, provide a comprehensive list of at least 10-15 betting tips with a confidence score (0-100) for each. Ensure you cover a wide variety of markets. The 'tips' array in your JSON response **must** include predictions for the following categories where sufficient data exists to make a confident prediction:
-    - **Match Result** (W1, X, W2)
-    - **Double Chance** (1X, 12, 2X)
-    - **BTTS** (BTTS, BTTS-NO)
-    - **Total Goals** (e.g., TO 2.5, TU 3.5)
-    - **Team Total Goals** (e.g., 1TO 1.5, 2TU 0.5)
-    - **Asian Handicap** (e.g., H -1.5, A +0.5)
-    - **Total Corners** (e.g., CO 9.5, CU 10.5)
-    - **Team Corners** (e.g., 1CO 5.5, 2CU 3.5)
-    - **HT/FT Result** (e.g., W1/W1, X/W2)
-3.  **Generate Key Tips for Accumulators:**
-    - **Safe Tip:** Identify the single safest tip with the highest probability of success (typically confidence > 80%). This is a foundational bet for a low-risk accumulator. It must be returned in the 'safeTip' field.
-    - **Value Tip:** Identify a tip that represents excellent value. This is where your analysis indicates a significantly higher probability of success than what typical market odds would suggest. It should be a well-reasoned bet that has a strong chance of winning but is also priced attractively. Avoid extremely risky long-shots; focus on 'mispriced' opportunities with solid analytical backing. It must be returned in the 'valueTip' field.
-4.  **Write a Detailed Preview:** Compose a professional, in-depth match preview in Markdown format. Structure it with these sections:
-    - **Match Preview:** Briefly introduce the match, its context, and importance.
-    - **Recent Form Analysis:** Detail the recent performance of both teams.
-    - **H2H Insights:** Summarize key findings from their head-to-head history.
-    - **Injury & Team News:** List significant player absences and their potential impact.
-    - **Tactical Breakdown:** Analyze the expected tactical battle.
-    - **Key Players:** Identify one player from each team who could be decisive.
-    - **Prediction Rationale:** Conclude with a summary of your reasoning for the predictions.
-    - **Betting Odds Analysis:** Compare your analysis with typical market odds (e.g., from a major bookmaker). This comparison is critical for identifying value. Highlight where your calculated confidence diverges positively from the implied probability of the odds. This is the foundation for your 'Value Tip'. Suggest potential tips on secondary markets like corners, cards, or HT/FT results if there are strong indicators.
-5.  **Predict Correct Scores:** Based on your analysis, provide a list of the three most probable final scores.
+For EACH match in the list, perform a comprehensive analysis by considering the following critical factors:
+- Current Form & Momentum
+- Head-to-Head (H2H) Deep Dive
+- Team News, Injuries & Suspensions
+- League Context & Motivation
+- Tactical Matchup
+
+Based on your analysis for each match, provide:
+1.  A list of 10-15 varied betting tips with confidence scores.
+2.  A single "Safe Tip" for accumulators.
+3.  A "Value Tip" representing a mispriced opportunity.
+4.  A detailed, professional match preview in Markdown.
+5.  A list of the three most likely correct scores.
 
 **JSON Output Instructions & Value Formatting:**
-Return ONLY the JSON object. The JSON object must conform to the provided schema, including the 'safeTip', 'valueTip', and 'correctScores' array. The analysis must be a single string with markdown formatting.
+Return ONLY a single JSON array. Each element in the array must be an object corresponding to one of the matches provided.
+Each object in the array MUST conform to the following schema:
+{
+  "fixtureId": <The integer ID of the fixture>,
+  "prediction": { ... the detailed prediction object ... }
+}
+The 'prediction' object must contain 'safeTip', 'valueTip', 'tips', 'analysis', and 'correctScores'. The analysis must be a single string with markdown formatting.
 **Crucially, for the 'value' field in all tips, you MUST use the following standardized abbreviations. Do NOT use team names or descriptive text.**
 - **Match Result:** Use 'W1' for Home Win, 'X' for Draw, 'W2' for Away Win.
 - **Double Chance:** Use '1X' for Home Win or Draw, '12' for Home or Away Win, '2X' for Away Win or Draw.
@@ -121,18 +126,18 @@ Return ONLY the JSON object. The JSON object must conform to the provided schema
       contents: prompt,
       config: {
         responseMimeType: "application/json",
-        responseSchema: responseSchema,
+        responseSchema: batchResponseSchema,
       },
     });
     
     const jsonText = response.text.trim();
-    return JSON.parse(jsonText) as PredictionResult;
+    return JSON.parse(jsonText) as BatchPrediction[];
   } catch (error) {
     console.error("Gemini API call failed:", error);
     if (error instanceof SyntaxError) {
       throw new Error("Failed to parse prediction data. The AI may have returned an invalid format.");
     }
-    throw new Error("An error occurred while generating the prediction.");
+    throw new Error("An error occurred while generating the league predictions.");
   }
 }
 
