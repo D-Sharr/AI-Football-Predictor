@@ -77,6 +77,7 @@ const CircularProgress: React.FC<{ confidence: number }> = ({ confidence }) => {
 
 const FixtureItem: React.FC<FixtureItemProps> = ({ fixture, predictionState }) => {
   const [isAnalysisExpanded, setIsAnalysisExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const { result: prediction, isLoading, error } = predictionState || { result: null, isLoading: false, error: null };
 
@@ -89,6 +90,38 @@ const FixtureItem: React.FC<FixtureItemProps> = ({ fixture, predictionState }) =
 
   const finishedMatchStatuses = ['FT', 'AET', 'PEN'];
   const isFinished = finishedMatchStatuses.includes(fixture.fixture.status.short);
+
+  const handleCopyText = () => {
+    if (copied) return;
+    const dateOptions: Intl.DateTimeFormatOptions = { day: 'numeric', month: 'short', year: 'numeric' };
+    const matchDate = new Date(fixture.fixture.date).toLocaleDateString('en-GB', dateOptions);
+
+    const textToCopy = `${matchDate}, ${fixture.league.name}, ${fixture.teams.home.name} vs ${fixture.teams.away.name} match prediction, possible tips with confidence percent and best tips.`;
+    
+    navigator.clipboard.writeText(textToCopy).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+    }).catch(err => {
+        console.error('Failed to copy text: ', err);
+    });
+  };
+
+  const isValidTipValueForGrid = (value: string): boolean => {
+    const upperValue = value.toUpperCase().trim();
+    
+    const exactMatches = ['W1', 'X', 'W2', '1X', '12', '2X', 'BTTS', 'BTTS-NO'];
+    if (exactMatches.includes(upperValue)) return true;
+
+    // Regex for patterns like TO 2.5, 1TU 0.5, H -1.5, W1/X
+    const patterns = [
+        /^T[OU]\s*[\d.]+$/,       // Total Goals
+        /^[12]T[OU]\s*[\d.]+$/,    // Team Total Goals
+        /^[HA]\s*[+-]?[\d.]+$/,     // Asian Handicap
+        /^(W1|W2|X)\/(W1|W2|X)$/, // HT/FT
+    ];
+    
+    return patterns.some(pattern => pattern.test(upperValue));
+  };
 
   const validateTip = (tip: Tip, fixture: Fixture): 'correct' | 'incorrect' | 'unknown' | 'uncheckable' => {
     const homeGoals = fixture.goals.home;
@@ -202,40 +235,59 @@ const FixtureItem: React.FC<FixtureItemProps> = ({ fixture, predictionState }) =
     <div className="bg-white dark:bg-brand-surface rounded-lg shadow-lg flex flex-col justify-between transition-shadow duration-300 hover:shadow-xl relative overflow-hidden">
       <div className="p-4">
         {/* Card Header */}
-        <div className="flex justify-between items-center mb-2 text-xs font-semibold">
-           <div className={`px-2 py-1 rounded-md ${isFinished ? 'bg-amber-500 text-black' : 'bg-gray-200 dark:bg-brand-primary text-gray-800 dark:text-brand-text-dark'}`}>
-                {isFinished ? 'FINISHED' : kickoffTime}
-           </div>
+        <div className="flex justify-between items-start mb-2 text-xs font-semibold">
+          {/* Left Side */}
+          {isFinished ? (
+              <div className="px-2 py-1 rounded-md bg-amber-500 text-black">
+                  FINISHED
+              </div>
+          ) : (
+              <button
+                  onClick={handleCopyText}
+                  disabled={copied}
+                  className="px-2 py-1 rounded-md bg-sky-200 hover:bg-sky-300 text-sky-800 dark:bg-sky-800 dark:hover:bg-sky-700 dark:text-sky-100 font-semibold transition-all duration-200 disabled:cursor-default disabled:bg-green-500 disabled:text-white"
+              >
+                  {copied ? 'Copied!' : 'Get Text'}
+              </button>
+          )}
 
+          {/* Right Side */}
+          <div className="flex items-center space-x-2 text-right">
             {isLoading ? (
                 <div className="flex items-center justify-center space-x-1 bg-blue-500/80 text-white px-2 py-1 rounded-md animate-pulse">
                     <span>Analyzing...</span>
                 </div>
-            ) : prediction ? (
+            ) : (
+              <>
                 <div className="flex items-center space-x-1">
-                    {prediction.safeTip && (
-                        <div title={`Safe Tip. Confidence: ${prediction.safeTip.confidence}%`} className="flex items-center space-x-1 px-2 py-1 rounded-md bg-cyan-500 text-white">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                              <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                            </svg>
-                            <span>{prediction.safeTip.value}</span>
-                        </div>
-                    )}
-                    {prediction.valueTip && (
-                        <div title={`Value Tip. Confidence: ${prediction.valueTip.confidence}%`} className="flex items-center space-x-1 px-2 py-1 rounded-md bg-orange-500 text-white">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-                              <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm-.707 10.607a1 1 0 011.414 0l.707-.707a1 1 0 11-1.414-1.414l-.707.707zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
-                            </svg>
-                            <span>{prediction.valueTip.value}</span>
-                        </div>
-                    )}
+                  {prediction?.safeTip && (
+                      <div title={`Safe Tip. Confidence: ${prediction.safeTip.confidence}%`} className="flex items-center space-x-1 px-2 py-1 rounded-md bg-cyan-500 text-white">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                          </svg>
+                          <span>{prediction.safeTip.value}</span>
+                      </div>
+                  )}
+                  {prediction?.valueTip && (
+                      <div title={`Value Tip. Confidence: ${prediction.valueTip.confidence}%`} className="flex items-center space-x-1 px-2 py-1 rounded-md bg-orange-500 text-white">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm-.707 10.607a1 1 0 011.414 0l.707-.707a1 1 0 11-1.414-1.414l-.707.707zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clipRule="evenodd" />
+                          </svg>
+                          <span>{prediction.valueTip.value}</span>
+                      </div>
+                  )}
                 </div>
-            ) : null}
-        </div>
-        
-        {/* Round info */}
-        <div className="text-center text-xs text-gray-500 dark:text-brand-secondary mb-2 leading-tight">
-          {fixture.league.round}
+                 {fixture.league.round && (
+                    <div 
+                        className={`px-2 py-1 rounded-md bg-gray-100 dark:bg-brand-primary text-gray-600 dark:text-brand-text-dark font-semibold truncate ${(prediction?.safeTip || prediction?.valueTip) ? 'hidden' : ''}`}
+                        title={fixture.league.round}
+                    >
+                        {fixture.league.round}
+                    </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Teams Section */}
@@ -245,8 +297,11 @@ const FixtureItem: React.FC<FixtureItemProps> = ({ fixture, predictionState }) =
             <h4 className="font-bold text-sm text-gray-900 dark:text-brand-text-light leading-tight truncate w-full">{fixture.teams.home.name}</h4>
           </div>
           
-          <div className="text-2xl font-bold text-gray-800 dark:text-brand-text-light px-2">
-            {isFinished ? `${fixture.goals.home} - ${fixture.goals.away}` : 'vs'}
+          <div className="text-gray-800 dark:text-brand-text-light px-2">
+            {isFinished 
+              ? <span className="text-2xl font-bold">{fixture.goals.home} - {fixture.goals.away}</span>
+              : <span className="text-lg font-bold">{kickoffTime}</span>
+            }
           </div>
 
           <div className="flex-1 flex flex-col items-center px-1 min-w-0">
@@ -275,7 +330,7 @@ const FixtureItem: React.FC<FixtureItemProps> = ({ fixture, predictionState }) =
           <div className="bg-gray-50 dark:bg-black/20 p-4 border-t border-gray-200 dark:border-brand-primary">
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-center">
                 {prediction.tips
-                    .filter(tip => tip.bet.toLowerCase() !== 'correct score')
+                    .filter(tip => tip.bet.toLowerCase() !== 'correct score' && isValidTipValueForGrid(tip.value))
                     .sort((a, b) => b.confidence - a.confidence)
                     .slice(0, 6)
                     .map((tip) => {
