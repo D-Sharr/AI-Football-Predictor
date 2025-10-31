@@ -73,7 +73,12 @@ const batchResponseSchema = {
 };
 
 
-export async function getLeaguePredictions(fixtures: Fixture[]): Promise<BatchPrediction[]> {
+export async function getLeaguePredictions(
+  fixtures: Fixture[],
+  onPredictionReceived: (prediction: BatchPrediction) => void,
+  onError: (error: Error) => void,
+  onComplete: () => void
+) {
   const fixtureList = fixtures.map(f =>
     `- **Match:** ${f.teams.home.name} vs ${f.teams.away.name} (${f.league.name})\n  - **Fixture ID:** ${f.fixture.id}\n  - **Date:** ${new Date(f.fixture.date).toUTCString()}`
   ).join('\n');
@@ -121,23 +126,69 @@ The 'prediction' object must contain 'safeTip', 'valueTip', 'tips', 'analysis', 
 `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-pro',
+    const response = await ai.models.generateContentStream({
+      model: 'gemini-2.5-flash',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: batchResponseSchema,
       },
     });
-    
-    const jsonText = response.text.trim();
-    return JSON.parse(jsonText) as BatchPrediction[];
-  } catch (error) {
-    console.error("Gemini API call failed:", error);
-    if (error instanceof SyntaxError) {
-      throw new Error("Failed to parse prediction data. The AI may have returned an invalid format.");
+
+    let buffer = '';
+    for await (const chunk of response) {
+      buffer += chunk.text;
+      
+      let lastProcessedIndex = 0;
+      while (true) {
+        const objectStartIndex = buffer.indexOf('{', lastProcessedIndex);
+        if (objectStartIndex === -1) break;
+
+        let braceCount = 1;
+        let objectEndIndex = -1;
+        // Search for the matching closing brace, respecting nested braces
+        for (let i = objectStartIndex + 1; i < buffer.length; i++) {
+          const char = buffer[i];
+          if (char === '{') {
+            braceCount++;
+          } else if (char === '}') {
+            braceCount--;
+          }
+          if (braceCount === 0) {
+            objectEndIndex = i;
+            break;
+          }
+        }
+
+        if (objectEndIndex !== -1) {
+          const jsonString = buffer.substring(objectStartIndex, objectEndIndex + 1);
+          try {
+            const parsedObject = JSON.parse(jsonString) as BatchPrediction;
+            if (parsedObject.fixtureId && parsedObject.prediction) {
+               onPredictionReceived(parsedObject);
+               lastProcessedIndex = objectEndIndex + 1;
+            } else {
+               break; 
+            }
+          } catch (e) {
+            // Incomplete JSON object in buffer, wait for more chunks
+            break;
+          }
+        } else {
+          // No complete object found yet, wait for more chunks
+          break;
+        }
+      }
+      
+      if (lastProcessedIndex > 0) {
+        buffer = buffer.substring(lastProcessedIndex);
+      }
     }
-    throw new Error("An error occurred while generating the league predictions.");
+  } catch (error) {
+    console.error("Gemini API stream failed:", error);
+    onError(new Error("An error occurred while streaming league predictions."));
+  } finally {
+    onComplete();
   }
 }
 
@@ -173,7 +224,7 @@ ${fixtureList}
 `;
   try {
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-pro',
+        model: 'gemini-2.5-flash',
         contents: prompt,
       });
 

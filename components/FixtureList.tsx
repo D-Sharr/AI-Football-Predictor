@@ -7,9 +7,10 @@ interface FixtureListProps {
   predictions: { [key: number]: PredictionState };
   onAnalyzeLeague: (fixtures: Fixture[]) => void;
   onGetAccumulatorTips: (fixtures: Fixture[], leagueName: string) => void;
+  isApiLimitReached: boolean;
 }
 
-const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onAnalyzeLeague, onGetAccumulatorTips }) => {
+const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onAnalyzeLeague, onGetAccumulatorTips, isApiLimitReached }) => {
   const [openLeagues, setOpenLeagues] = useState<Set<string>>(new Set());
   
   const groupedFixtures: { [key: string]: Fixture[] } = fixtures.reduce((acc, fixture) => {
@@ -87,8 +88,9 @@ const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onAnal
                 <div className="flex items-center space-x-2 ml-4 flex-shrink-0">
                   <button
                     onClick={(e) => { e.stopPropagation(); onAnalyzeLeague(leagueFixtures); }}
-                    className="p-2 rounded-full text-gray-500 dark:text-brand-secondary hover:bg-gray-200 dark:hover:bg-brand-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent dark:focus:ring-offset-brand-surface"
-                    title="Analyze All Matches in this League"
+                    disabled={isApiLimitReached}
+                    className="p-2 rounded-full text-gray-500 dark:text-brand-secondary hover:bg-gray-200 dark:hover:bg-brand-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent dark:focus:ring-offset-brand-surface disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                    title={isApiLimitReached ? "Daily free usage limit reached. Try again tomorrow." : "Analyze All Matches in this League"}
                   >
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                       <path d="M10 2a6 6 0 00-6 6v3.586l-1.707 1.707A1 1 0 003 15h14a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
@@ -96,8 +98,9 @@ const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onAnal
                   </button>
                   <button
                     onClick={(e) => { e.stopPropagation(); onGetAccumulatorTips(leagueFixtures, leagueName); }}
-                    className="p-2 rounded-full text-gray-500 dark:text-brand-secondary hover:bg-gray-200 dark:hover:bg-brand-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent dark:focus:ring-offset-brand-surface"
-                    title="Get Accumulator Tips for this League"
+                    disabled={isApiLimitReached}
+                    className="p-2 rounded-full text-gray-500 dark:text-brand-secondary hover:bg-gray-200 dark:hover:bg-brand-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent dark:focus:ring-offset-brand-surface disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                    title={isApiLimitReached ? "Daily free usage limit reached. Try again tomorrow." : "Get Accumulator Tips for this League"}
                   >
                      <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                       <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a1 1 0 011-1h14a1 1 0 110 2H3a1 1 0 01-1-1z" />

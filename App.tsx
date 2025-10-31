@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Fixture, PredictionState, BatchPrediction } from './types';
 import { getDailyFixtures, clearCacheForDate } from './services/footballApiService';
 import { getLeaguePredictions, getAccumulatorPrediction } from './services/geminiService';
+import { canMakeApiCall, recordApiCall } from './services/usageTracker';
 import Header from './components/Header';
 import FixtureList from './components/FixtureList';
 import Loader from './components/Loader';
@@ -26,6 +27,8 @@ const App: React.FC = () => {
   const [selectedLeague, setSelectedLeague] = useState<string>('all');
 
   const [theme, setTheme] = useState('light');
+  
+  const [isApiLimitReached, setIsApiLimitReached] = useState<boolean>(() => !canMakeApiCall());
 
   // State to hold all predictions, keyed by fixture ID
   const [predictions, setPredictions] = useState<{ [key: number]: PredictionState }>({});
@@ -36,6 +39,10 @@ const App: React.FC = () => {
     error: string | null;
     leagueName: string | null;
   }>({ isLoading: false, data: null, error: null, leagueName: null });
+
+  const updateApiUsage = useCallback(() => {
+    setIsApiLimitReached(!canMakeApiCall());
+  }, []);
 
 
   useEffect(() => {
@@ -52,6 +59,10 @@ const App: React.FC = () => {
     }
     localStorage.setItem('theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    updateApiUsage();
+  }, [updateApiUsage]);
 
   const toggleTheme = () => {
     setTheme(prevTheme => (prevTheme === 'dark' ? 'light' : 'dark'));
@@ -157,9 +168,20 @@ const App: React.FC = () => {
     return `Matches for ${date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
   };
 
+  const NO_MORE_FREE_PLAN_ERROR = "You have reached the daily free usage limit for the Gemini API. For continued access, please check the official pricing plans. The free quota will reset tomorrow.";
+
   const handleAnalyzeLeague = useCallback(async (fixturesInLeague: Fixture[]) => {
+    if (isApiLimitReached) {
+        setError(NO_MORE_FREE_PLAN_ERROR);
+        return;
+    }
+    recordApiCall();
+    updateApiUsage();
+
     const fixturesToAnalyze = fixturesInLeague.filter(f => !predictions[f.fixture.id]?.result && !predictions[f.fixture.id]?.isLoading);
     if (fixturesToAnalyze.length === 0) return;
+
+    const fixtureIdsToAnalyze = new Set(fixturesToAnalyze.map(f => f.fixture.id));
 
     setPredictions(prev => {
         const newPredictions = { ...prev };
@@ -169,37 +191,60 @@ const App: React.FC = () => {
         return newPredictions;
     });
 
-    try {
-        const results: BatchPrediction[] = await getLeaguePredictions(fixturesToAnalyze);
+    const analyzedFixtureIds = new Set<number>();
+
+    const onPrediction = (prediction: BatchPrediction) => {
+        if (fixtureIdsToAnalyze.has(prediction.fixtureId)) {
+            setPredictions(prev => ({
+                ...prev,
+                [prediction.fixtureId]: { result: prediction.prediction, isLoading: false, error: null }
+            }));
+            analyzedFixtureIds.add(prediction.fixtureId);
+        }
+    };
+
+    const onError = (error: Error) => {
+        const errorMessage = error.message || "An unknown error occurred during analysis.";
         setPredictions(prev => {
             const newPredictions = { ...prev };
-            results.forEach(item => {
-                if (newPredictions[item.fixtureId]) {
-                    newPredictions[item.fixtureId] = { result: item.prediction, isLoading: false, error: null };
+            fixturesToAnalyze.forEach(fixture => {
+                if (newPredictions[fixture.fixture.id]?.isLoading) {
+                    newPredictions[fixture.fixture.id] = { result: null, isLoading: false, error: errorMessage };
                 }
             });
-             // Handle any fixtures that were sent for analysis but didn't get a result back
+            return newPredictions;
+        });
+    };
+
+    const onComplete = () => {
+        setPredictions(prev => {
+            const newPredictions = { ...prev };
             fixturesToAnalyze.forEach(f => {
-                if (!results.some(r => r.fixtureId === f.fixture.id)) {
+                if (!analyzedFixtureIds.has(f.fixture.id) && newPredictions[f.fixture.id]?.isLoading) {
                     newPredictions[f.fixture.id] = { result: null, isLoading: false, error: "AI did not return a prediction for this match." };
                 }
             });
             return newPredictions;
         });
-    } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
-        setPredictions(prev => {
-            const newPredictions = { ...prev };
-            fixturesToAnalyze.forEach(fixture => {
-                newPredictions[fixture.fixture.id] = { result: null, isLoading: false, error: errorMessage };
-            });
-            return newPredictions;
-        });
+    };
+
+    try {
+      await getLeaguePredictions(fixturesToAnalyze, onPrediction, onError, onComplete);
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
+      onError(new Error(errorMessage));
     }
-  }, [predictions]);
+}, [predictions, isApiLimitReached, updateApiUsage]);
 
 
   const handleGetAccumulatorTips = useCallback(async (fixturesInLeague: Fixture[], leagueName: string) => {
+    if (isApiLimitReached) {
+      setAccumulatorState({ isLoading: false, data: null, error: NO_MORE_FREE_PLAN_ERROR, leagueName });
+      return;
+    }
+    recordApiCall();
+    updateApiUsage();
+
     setAccumulatorState({ isLoading: true, data: null, error: null, leagueName });
     try {
         const result = await getAccumulatorPrediction(fixturesInLeague, leagueName);
@@ -208,7 +253,7 @@ const App: React.FC = () => {
         const errorMessage = err instanceof Error ? err.message : "An unknown error occurred while generating accumulator tips.";
         setAccumulatorState({ isLoading: false, data: null, error: errorMessage, leagueName });
     }
-  }, []);
+  }, [isApiLimitReached, updateApiUsage]);
 
   const closeAccumulatorModal = () => {
     setAccumulatorState({ isLoading: false, data: null, error: null, leagueName: null });
@@ -245,6 +290,16 @@ const App: React.FC = () => {
         ) : error ? (
           <div className="text-center p-8 bg-white dark:bg-brand-surface rounded-lg shadow">
             <p className="text-red-500 dark:text-red-400 text-lg">{error}</p>
+            {error.includes("pricing plans") && (
+              <a 
+                href="https://ai.google.dev/pricing" 
+                target="_blank" 
+                rel="noopener noreferrer" 
+                className="text-brand-accent hover:underline mt-4 inline-block font-semibold"
+              >
+                  Learn more about pricing →
+              </a>
+            )}
           </div>
         ) : (
           <>
@@ -260,6 +315,7 @@ const App: React.FC = () => {
               predictions={predictions}
               onAnalyzeLeague={handleAnalyzeLeague}
               onGetAccumulatorTips={handleGetAccumulatorTips}
+              isApiLimitReached={isApiLimitReached}
             />
           </>
         )}
