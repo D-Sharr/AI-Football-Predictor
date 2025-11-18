@@ -1,6 +1,7 @@
 // IMPORTANT: In a real-world application, this key should be stored in a secure environment variable on a server, not exposed in client-side code.
 // For the purpose of this self-contained app, it is included here as per the prompt's instructions.
-export const API_FOOTBALL_KEY = '095979377emsh864edabb6d16019p1ea440jsn03dc4fee9e5d';
+//export const API_FOOTBALL_KEY = '095979377emsh864edabb6d16019p1ea440jsn03dc4fee9e5d';
+export const API_FOOTBALL_KEY = 'Dg9q4XpMqPmshEye5nnjeqrvir54p1zXj0UjsnJSQlhAaasBgI';
 export const API_FOOTBALL_HOST = 'api-football-v1.p.rapidapi.com';
 
 // A selection of popular league IDs, ordered by world ranking/importance.
