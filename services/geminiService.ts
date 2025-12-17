@@ -2,8 +2,14 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Fixture, PredictionResult, BatchPrediction } from "../types";
 
-// The API key is injected from environment variables
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+// The API key must be obtained exclusively from process.env.API_KEY
+const getAIClient = () => {
+  const apiKey = process.env.API_KEY;
+  if (!apiKey) {
+    throw new Error("API_KEY is not configured in environment variables.");
+  }
+  return new GoogleGenAI({ apiKey });
+};
 
 const singlePredictionSchema = {
   type: Type.OBJECT,
@@ -72,6 +78,7 @@ export async function getLeaguePredictions(
   onError: (error: Error) => void,
   onComplete: () => void
 ) {
+  const ai = getAIClient();
   const fixtureList = fixtures.map(f =>
     `- **Match:** ${f.teams.home.name} vs ${f.teams.away.name} (${f.league.name})\n  - **ID:** ${f.fixture.id}\n  - **Time:** ${f.fixture.date}`
   ).join('\n');
@@ -88,79 +95,113 @@ Your task is to analyze the following matches and provide predictions focusing E
 - Home team = 1st House (Lagna); Away team = 7th House.
 - Analysis of 6th House (Victory) and 11th House (Gain).
 - The number of goals is determined by the strength of the 2nd (wealth/gain) and 5th (creativity/play) cusps in relation to the main significators.
-- Use the match start time for the Horary chart.
 - Combine astrological insights with team form.
 
 **Matches:**
 ${fixtureList}
 
-**Output Requirements:**
-- Provide tips ONLY for Match Result, Double Chance, and Over/Under.
-- Include the "correctScores" property with the 3 most likely goal outcomes (e.g., "2-1", "1-1", "0-2").
-- Provide a detailed "KP Astrology Analysis" for each match.
-
-Return a JSON array conforming to the provided schema.
+Return a JSON array of objects, one for each match ID provided.
 `;
 
   try {
     const response = await ai.models.generateContentStream({
-      model: 'gemini-2.5-pro',
+      model: 'gemini-3-pro-preview', // Upgraded for complex reasoning
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: batchResponseSchema,
-        thinkingConfig: { thinkingBudget: 4000 }
+        thinkingConfig: { thinkingBudget: 32768 } // Max budget for pro reasoning
       },
     });
 
     let buffer = '';
     for await (const chunk of response) {
       buffer += chunk.text;
+      
+      // Attempt to extract individual objects from the growing JSON array string
       let lastProcessedIndex = 0;
-      while (true) {
-        const objectStartIndex = buffer.indexOf('{', lastProcessedIndex);
-        if (objectStartIndex === -1) break;
-        let braceCount = 1;
-        let objectEndIndex = -1;
-        for (let i = objectStartIndex + 1; i < buffer.length; i++) {
-          if (buffer[i] === '{') braceCount++;
-          else if (buffer[i] === '}') braceCount--;
-          if (braceCount === 0) {
-            objectEndIndex = i;
-            break;
+      let depth = 0;
+      let inString = false;
+      let startIdx = -1;
+
+      for (let i = 0; i < buffer.length; i++) {
+        const char = buffer[i];
+        
+        if (char === '"' && buffer[i-1] !== '\\') {
+          inString = !inString;
+        }
+
+        if (!inString) {
+          if (char === '{') {
+            if (depth === 0) startIdx = i;
+            depth++;
+          } else if (char === '}') {
+            depth--;
+            if (depth === 0 && startIdx !== -1) {
+              const potentialJson = buffer.substring(startIdx, i + 1);
+              try {
+                const parsed = JSON.parse(potentialJson);
+                if (parsed.fixtureId && parsed.prediction) {
+                  onPredictionReceived(parsed as BatchPrediction);
+                  lastProcessedIndex = i + 1;
+                }
+              } catch (e) {
+                // Not a complete valid object yet, continue
+              }
+              startIdx = -1;
+            }
           }
         }
-        if (objectEndIndex !== -1) {
-          const jsonString = buffer.substring(objectStartIndex, objectEndIndex + 1);
-          try {
-            const parsedObject = JSON.parse(jsonString) as BatchPrediction;
-            if (parsedObject.fixtureId && parsedObject.prediction) {
-               onPredictionReceived(parsedObject);
-               lastProcessedIndex = objectEndIndex + 1;
-            } else break;
-          } catch { break; }
-        } else break;
       }
-      if (lastProcessedIndex > 0) buffer = buffer.substring(lastProcessedIndex);
+      if (lastProcessedIndex > 0) {
+        buffer = buffer.substring(lastProcessedIndex);
+      }
     }
   } catch (error) {
     console.error("Gemini API stream failed:", error);
-    onError(new Error("Analysis failed. Please try again."));
+    onError(error instanceof Error ? error : new Error("Analysis failed."));
   } finally {
     onComplete();
   }
 }
 
-export async function translateText(text: string, targetLanguage: string): Promise<string> {
+// Added translateText function to resolve the import error in FixtureItem.tsx
+export async function translateText(
+  text: string,
+  targetLanguage: string
+): Promise<string> {
+  const ai = getAIClient();
   const prompt = `Translate the following football match analysis to ${targetLanguage}. Keep the tone professional and astrological. Maintain the Markdown formatting.\n\n${text}`;
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview', // Fastest model for translation
       contents: prompt,
     });
     return response.text || text;
   } catch (error) {
     console.error("Translation failed:", error);
-    return text; // Return original on failure
+    return text;
+  }
+}
+
+export async function translateTextStream(
+  text: string,
+  targetLanguage: string,
+  onChunk: (chunk: string) => void
+): Promise<void> {
+  const ai = getAIClient();
+  const prompt = `Translate the following football match analysis to ${targetLanguage}. Keep the tone professional and astrological. Maintain the Markdown formatting.\n\n${text}`;
+  try {
+    const response = await ai.models.generateContentStream({
+      model: 'gemini-3-flash-preview', // Fastest model for translation
+      contents: prompt,
+    });
+    for await (const chunk of response) {
+      if (chunk.text) {
+        onChunk(chunk.text);
+      }
+    }
+  } catch (error) {
+    console.error("Translation stream failed:", error);
   }
 }
