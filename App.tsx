@@ -37,7 +37,6 @@ const App: React.FC = () => {
     setIsApiLimitReached(!canMakeApiCall());
   }, []);
 
-
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme');
     const initialTheme = savedTheme || 'light';
@@ -85,9 +84,7 @@ const App: React.FC = () => {
         if (!isAPreferred && isBPreferred) return 1;
 
         if (isAPreferred && isBPreferred) {
-          if (rankA !== rankB) {
-            return rankA - rankB;
-          }
+          if (rankA !== rankB) return rankA - rankB;
         }
 
         const continentA = getContinent(a.league.country);
@@ -116,7 +113,7 @@ const App: React.FC = () => {
       setAvailableLeagues(uniqueLeagues);
 
     } catch (err) {
-      setError('Failed to fetch match fixtures. The API might be unavailable or the daily limit reached.');
+      setError('Failed to fetch match fixtures. The API might be unavailable.');
       console.error(err);
     } finally {
       setIsLoadingFixtures(false);
@@ -142,10 +139,9 @@ const App: React.FC = () => {
   
   const handleRefresh = useCallback(async () => {
     clearCacheForDate(selectedDate);
-    setPredictions({}); // Clear predictions only on manual refresh
+    setPredictions({});
     await fetchFixtures(selectedDate);
   }, [selectedDate, fetchFixtures]);
-
 
   const formatDisplayDate = (date: Date) => {
     const today = new Date();
@@ -161,81 +157,83 @@ const App: React.FC = () => {
     return `Matches for ${date.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`;
   };
 
-  const NO_MORE_FREE_PLAN_ERROR = "You have reached the daily free usage limit for the Gemini API. For continued access, please check the official pricing plans. The free quota will reset tomorrow.";
+  const NO_MORE_FREE_PLAN_ERROR = "You have reached the daily free usage limit for the Gemini API.";
 
   const handleAnalyzeLeague = useCallback(async (fixturesInLeague: Fixture[]) => {
     if (isApiLimitReached) {
         setError(NO_MORE_FREE_PLAN_ERROR);
         return;
     }
-    recordApiCall();
-    updateApiUsage();
 
     const fixturesToAnalyze = fixturesInLeague.filter(f => !predictions[f.fixture.id]?.result && !predictions[f.fixture.id]?.isLoading);
     if (fixturesToAnalyze.length === 0) return;
 
-    const fixtureIdsToAnalyze = new Set(fixturesToAnalyze.map(f => f.fixture.id));
-
-    setPredictions(prev => {
-        const newPredictions = { ...prev };
-        fixturesToAnalyze.forEach(fixture => {
-            newPredictions[fixture.fixture.id] = { result: null, isLoading: true, error: null };
+    // Split fixtures into chunks of 3 for faster perceived performance
+    const chunkSize = 3;
+    for (let i = 0; i < fixturesToAnalyze.length; i += chunkSize) {
+        const chunk = fixturesToAnalyze.slice(i, i + chunkSize);
+        
+        // Mark chunk as loading
+        setPredictions(prev => {
+            const newPredictions = { ...prev };
+            chunk.forEach(fixture => {
+                newPredictions[fixture.fixture.id] = { result: null, isLoading: true, error: null };
+            });
+            return newPredictions;
         });
-        return newPredictions;
-    });
 
-    const analyzedFixtureIds = new Set<number>();
+        // Record usage for each chunk
+        recordApiCall();
+        updateApiUsage();
 
-    const onPrediction = (prediction: BatchPrediction) => {
-        if (fixtureIdsToAnalyze.has(prediction.fixtureId)) {
+        // Process chunk
+        const onPrediction = (prediction: BatchPrediction) => {
             setPredictions(prev => ({
                 ...prev,
                 [prediction.fixtureId]: { result: prediction.prediction, isLoading: false, error: null }
             }));
-            analyzedFixtureIds.add(prediction.fixtureId);
+        };
+
+        const onError = (error: Error) => {
+            const errorMessage = error.message;
+            setPredictions(prev => {
+                const newPredictions = { ...prev };
+                chunk.forEach(f => {
+                    if (newPredictions[f.fixture.id]?.isLoading) {
+                        newPredictions[f.fixture.id] = { result: null, isLoading: false, error: errorMessage };
+                    }
+                });
+                return newPredictions;
+            });
+        };
+
+        const onComplete = () => {
+            setPredictions(prev => {
+                const newPredictions = { ...prev };
+                chunk.forEach(f => {
+                    if (newPredictions[f.fixture.id]?.isLoading) {
+                        newPredictions[f.fixture.id] = { ...newPredictions[f.fixture.id], isLoading: false };
+                    }
+                });
+                return newPredictions;
+            });
+        };
+
+        // We process chunks in sequence but they are small so they return quickly
+        try {
+            await getLeaguePredictions(chunk, onPrediction, onError, onComplete);
+        } catch (err) {
+            console.error(err);
         }
-    };
-
-    const onError = (error: Error) => {
-        const errorMessage = error.message || "An unknown error occurred during analysis.";
-        setPredictions(prev => {
-            const newPredictions = { ...prev };
-            fixturesToAnalyze.forEach(fixture => {
-                if (newPredictions[fixture.fixture.id]?.isLoading) {
-                    newPredictions[fixture.fixture.id] = { result: null, isLoading: false, error: errorMessage };
-                }
-            });
-            return newPredictions;
-        });
-    };
-
-    const onComplete = () => {
-        setPredictions(prev => {
-            const newPredictions = { ...prev };
-            fixturesToAnalyze.forEach(f => {
-                if (!analyzedFixtureIds.has(f.fixture.id) && newPredictions[f.fixture.id]?.isLoading) {
-                    newPredictions[f.fixture.id] = { result: null, isLoading: false, error: "AI did not return a prediction for this match." };
-                }
-            });
-            return newPredictions;
-        });
-    };
-
-    try {
-      await getLeaguePredictions(fixturesToAnalyze, onPrediction, onError, onComplete);
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : "An unknown error occurred.";
-      onError(new Error(errorMessage));
+        
+        if (!canMakeApiCall()) break;
     }
 }, [predictions, isApiLimitReached, updateApiUsage]);
-
 
   const handleCopyLeagueMatches = useCallback((fixturesInLeague: Fixture[]) => {
     const textList = fixturesInLeague.map(f => `${f.teams.home.name} vs ${f.teams.away.name}`).join('\n');
     navigator.clipboard.writeText(textList).then(() => {
         alert("Match list copied to clipboard!");
-    }).catch(err => {
-        console.error('Failed to copy: ', err);
     });
   }, []);
 
@@ -252,8 +250,7 @@ const App: React.FC = () => {
           <button
             onClick={handleRefresh}
             disabled={isLoadingFixtures}
-            className="flex items-center space-x-2 bg-gray-200 hover:bg-gray-300 dark:bg-brand-primary dark:hover:bg-brand-secondary text-gray-800 dark:text-brand-text-dark font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            title="Refresh match data"
+            className="flex items-center space-x-2 bg-gray-200 hover:bg-gray-300 dark:bg-brand-primary dark:hover:bg-brand-secondary text-gray-800 dark:text-brand-text-dark font-semibold py-2 px-4 rounded-lg transition-colors disabled:opacity-50"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 ${isLoadingFixtures ? 'animate-spin' : ''}`} viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 110 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
@@ -269,16 +266,6 @@ const App: React.FC = () => {
         ) : error ? (
           <div className="text-center p-8 bg-white dark:bg-brand-surface rounded-lg shadow">
             <p className="text-red-500 dark:text-red-400 text-lg">{error}</p>
-            {error.includes("pricing plans") && (
-              <a 
-                href="https://ai.google.dev/pricing" 
-                target="_blank" 
-                rel="noopener noreferrer" 
-                className="text-brand-accent hover:underline mt-4 inline-block font-semibold"
-              >
-                  Learn more about pricing →
-              </a>
-            )}
           </div>
         ) : (
           <>

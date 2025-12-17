@@ -1,3 +1,4 @@
+
 export interface Fixture {
   fixture: {
     id: number;
@@ -60,8 +61,8 @@ export interface Tip {
 }
 
 export interface PredictionResult {
-  safeTip: Tip;
-  valueTip: Tip;
+  winResult: Tip;
+  totalGoals: Tip;
   tips: Tip[];
   analysis: string;
   correctScores?: string[];

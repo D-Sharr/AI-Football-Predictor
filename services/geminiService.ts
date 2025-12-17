@@ -6,7 +6,7 @@ import { Fixture, PredictionResult, BatchPrediction } from "../types";
 const getAIClient = () => {
   const apiKey = process.env.API_KEY;
   if (!apiKey) {
-    throw new Error("API_KEY is not configured in environment variables.");
+    throw new Error("API_KEY is not configured. Please add it to your environment variables.");
   }
   return new GoogleGenAI({ apiKey });
 };
@@ -14,29 +14,29 @@ const getAIClient = () => {
 const singlePredictionSchema = {
   type: Type.OBJECT,
   properties: {
-    safeTip: {
+    winResult: {
       type: Type.OBJECT,
-      description: "The single safest betting tip (Win/Draw or Over/Under only) with high probability.",
+      description: "Match outcome prediction. MUST be one of: W1 (Home), W2 (Away), X (Draw), 1X (Home/Draw), 2X (Away/Draw).",
       properties: {
-        bet: { type: Type.STRING, description: "The type of bet (Match Result, Double Chance, or Total Goals)." },
-        value: { type: Type.STRING, description: "The outcome abbreviation (W1, X, W2, 1X, 12, 2X, TO, TU)." },
-        confidence: { type: Type.INTEGER, description: "Confidence level 0-100." },
+        bet: { type: Type.STRING },
+        value: { type: Type.STRING },
+        confidence: { type: Type.INTEGER },
       },
       required: ["bet", "value", "confidence"],
     },
-    valueTip: {
+    totalGoals: {
       type: Type.OBJECT,
-      description: "A value tip focused on Win/Draw or Over/Under markets.",
+      description: "Total goals prediction. MUST be formatted as '[Number] Over' or '[Number] Under' (e.g., '2.5 Over', '2.5 Under', '1.5 Over').",
       properties: {
-        bet: { type: Type.STRING, description: "The type of bet." },
-        value: { type: Type.STRING, description: "The outcome abbreviation." },
-        confidence: { type: Type.INTEGER, description: "Confidence level 0-100." },
+        bet: { type: Type.STRING },
+        value: { type: Type.STRING },
+        confidence: { type: Type.INTEGER },
       },
       required: ["bet", "value", "confidence"],
     },
     tips: {
       type: Type.ARRAY,
-      description: "A list of 6-10 betting tips focusing ONLY on Win/Draw/Double Chance and Goal Over/Under.",
+      description: "Exactly 3 supplementary betting tips.",
       items: {
         type: Type.OBJECT,
         properties: {
@@ -49,15 +49,15 @@ const singlePredictionSchema = {
     },
     analysis: {
       type: Type.STRING,
-      description: "Professional match analysis using KP Astrology (Krishnamurti Paddhati) logic in Markdown format.",
+      description: "MOST POSSIBLE and COMPLETE match analysis using detailed KP Astrology logic (House Significators 1,6,7,11, Sub-lords) in Markdown.",
     },
     correctScores: {
       type: Type.ARRAY,
-      description: "Three most likely goals/correct scores based on astrological significators.",
+      description: "3 most likely correct scores.",
       items: { type: Type.STRING }
     }
   },
-  required: ["safeTip", "valueTip", "tips", "analysis", "correctScores"],
+  required: ["winResult", "totalGoals", "tips", "analysis", "correctScores"],
 };
 
 const batchResponseSchema = {
@@ -80,37 +80,35 @@ export async function getLeaguePredictions(
 ) {
   const ai = getAIClient();
   const fixtureList = fixtures.map(f =>
-    `- **Match:** ${f.teams.home.name} vs ${f.teams.away.name} (${f.league.name})\n  - **ID:** ${f.fixture.id}\n  - **Time:** ${f.fixture.date}`
+    `- Match: ${f.teams.home.name} vs ${f.teams.away.name} (ID: ${f.fixture.id})`
   ).join('\n');
 
   const prompt = `
-You are an expert football analyst and a master of Krishnamurti Paddhati (KP) Astrology. 
-Your task is to analyze the following matches and provide predictions focusing EXCLUSIVELY on:
-1. Match Results (W1, X, W2)
-2. Double Chance (1X, 12, 2X)
-3. Total Goals Over/Under (TO/TU)
-4. Most Likely Correct Scores (Goals Prediction)
+Act as a professional KP Astrology Football Analyst. Provide a MOST POSSIBLE and COMPLETE analysis for the following matches.
 
-**KP Astrology Methodology:**
-- Home team = 1st House (Lagna); Away team = 7th House.
-- Analysis of 6th House (Victory) and 11th House (Gain).
-- The number of goals is determined by the strength of the 2nd (wealth/gain) and 5th (creativity/play) cusps in relation to the main significators.
-- Combine astrological insights with team form.
+For each match, follow these strict rules:
+1. **Win Result Logic**: You must choose ONLY ONE from: W1 (Home Win), W2 (Away Win), X (Draw), 1X (Home Win or Draw), 2X (Away Win or Draw).
+2. **Total Goals Logic**: You must provide a specific line with Over or Under. Format: "[Number] Over" or "[Number] Under" (e.g., "2.5 Over", "2.5 Under", "1.5 Over").
+3. **KP Analysis Structure**:
+   - ### House Significators: Detailed breakdown of 1st, 6th, 7th, and 11th houses for both sides.
+   - ### Sub-Lord Strength: Analysis of the 6th and 11th house sub-lords to determine the winner's strength.
+   - ### Planetary Transits: Impact of current planets on the match timing and teams.
+   - ### Conclusion: Final summary of the astrological reason for the prediction.
 
-**Matches:**
+Matches:
 ${fixtureList}
 
-Return a JSON array of objects, one for each match ID provided.
+Return JSON array of objects {fixtureId, prediction}.
 `;
 
   try {
     const response = await ai.models.generateContentStream({
-      model: 'gemini-3-pro-preview', // Upgraded for complex reasoning
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: batchResponseSchema,
-        thinkingConfig: { thinkingBudget: 32768 } // Max budget for pro reasoning
+        thinkingConfig: { thinkingBudget: 4000 }
       },
     });
 
@@ -118,7 +116,6 @@ Return a JSON array of objects, one for each match ID provided.
     for await (const chunk of response) {
       buffer += chunk.text;
       
-      // Attempt to extract individual objects from the growing JSON array string
       let lastProcessedIndex = 0;
       let depth = 0;
       let inString = false;
@@ -126,11 +123,7 @@ Return a JSON array of objects, one for each match ID provided.
 
       for (let i = 0; i < buffer.length; i++) {
         const char = buffer[i];
-        
-        if (char === '"' && buffer[i-1] !== '\\') {
-          inString = !inString;
-        }
-
+        if (char === '"' && buffer[i-1] !== '\\') inString = !inString;
         if (!inString) {
           if (char === '{') {
             if (depth === 0) startIdx = i;
@@ -145,42 +138,23 @@ Return a JSON array of objects, one for each match ID provided.
                   onPredictionReceived(parsed as BatchPrediction);
                   lastProcessedIndex = i + 1;
                 }
-              } catch (e) {
-                // Not a complete valid object yet, continue
-              }
+              } catch (e) {}
               startIdx = -1;
             }
           }
         }
       }
-      if (lastProcessedIndex > 0) {
-        buffer = buffer.substring(lastProcessedIndex);
-      }
+      if (lastProcessedIndex > 0) buffer = buffer.substring(lastProcessedIndex);
     }
-  } catch (error) {
-    console.error("Gemini API stream failed:", error);
-    onError(error instanceof Error ? error : new Error("Analysis failed."));
+  } catch (error: any) {
+    console.error("Gemini API Error:", error);
+    let msg = "Analysis failed. Please try again later.";
+    if (error?.message?.includes("429") || error?.status === "RESOURCE_EXHAUSTED") {
+      msg = "API Quota exceeded. Please try again in a few minutes.";
+    }
+    onError(new Error(msg));
   } finally {
     onComplete();
-  }
-}
-
-// Added translateText function to resolve the import error in FixtureItem.tsx
-export async function translateText(
-  text: string,
-  targetLanguage: string
-): Promise<string> {
-  const ai = getAIClient();
-  const prompt = `Translate the following football match analysis to ${targetLanguage}. Keep the tone professional and astrological. Maintain the Markdown formatting.\n\n${text}`;
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview', // Fastest model for translation
-      contents: prompt,
-    });
-    return response.text || text;
-  } catch (error) {
-    console.error("Translation failed:", error);
-    return text;
   }
 }
 
@@ -190,18 +164,14 @@ export async function translateTextStream(
   onChunk: (chunk: string) => void
 ): Promise<void> {
   const ai = getAIClient();
-  const prompt = `Translate the following football match analysis to ${targetLanguage}. Keep the tone professional and astrological. Maintain the Markdown formatting.\n\n${text}`;
+  const prompt = `Translate to ${targetLanguage}. Keep Markdown and professional football/astrology terminology.\n\n${text}`;
   try {
     const response = await ai.models.generateContentStream({
-      model: 'gemini-3-flash-preview', // Fastest model for translation
+      model: 'gemini-3-flash-preview',
       contents: prompt,
     });
     for await (const chunk of response) {
-      if (chunk.text) {
-        onChunk(chunk.text);
-      }
+      if (chunk.text) onChunk(chunk.text);
     }
-  } catch (error) {
-    console.error("Translation stream failed:", error);
-  }
+  } catch (error) {}
 }
