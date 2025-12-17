@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Fixture, PredictionState } from '../types';
 import FixtureItem from './FixtureItem';
@@ -6,11 +7,11 @@ interface FixtureListProps {
   fixtures: Fixture[];
   predictions: { [key: number]: PredictionState };
   onAnalyzeLeague: (fixtures: Fixture[]) => void;
-  onGetAccumulatorTips: (fixtures: Fixture[], leagueName: string) => void;
+  onCopyLeagueMatches: (fixtures: Fixture[]) => void;
   isApiLimitReached: boolean;
 }
 
-const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onAnalyzeLeague, onGetAccumulatorTips, isApiLimitReached }) => {
+const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onAnalyzeLeague, onCopyLeagueMatches, isApiLimitReached }) => {
   const [openLeagues, setOpenLeagues] = useState<Set<string>>(new Set());
   
   const groupedFixtures: { [key: string]: Fixture[] } = fixtures.reduce((acc, fixture) => {
@@ -89,32 +90,23 @@ const FixtureList: React.FC<FixtureListProps> = ({ fixtures, predictions, onAnal
                   <button
                     onClick={(e) => { e.stopPropagation(); onAnalyzeLeague(leagueFixtures); }}
                     disabled={isApiLimitReached}
-                    className="p-2 rounded-full text-gray-500 dark:text-brand-secondary hover:bg-gray-200 dark:hover:bg-brand-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent dark:focus:ring-offset-brand-surface disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
+                    className="p-2 rounded-full text-brand-accent hover:bg-gray-200 dark:hover:bg-brand-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent dark:focus:ring-offset-brand-surface disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent flex items-center justify-center"
                     title={isApiLimitReached ? "Daily free usage limit reached. Try again tomorrow." : "Analyze All Matches in this League"}
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M10 2a6 6 0 00-6 6v3.586l-1.707 1.707A1 1 0 003 15h14a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z" />
-                    </svg>
+                     <span className="material-symbols-rounded text-2xl">auto_fix_high</span>
                   </button>
                   <button
-                    onClick={(e) => { e.stopPropagation(); onGetAccumulatorTips(leagueFixtures, leagueName); }}
-                    disabled={isApiLimitReached}
-                    className="p-2 rounded-full text-gray-500 dark:text-brand-secondary hover:bg-gray-200 dark:hover:bg-brand-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent dark:focus:ring-offset-brand-surface disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent dark:disabled:hover:bg-transparent"
-                    title={isApiLimitReached ? "Daily free usage limit reached. Try again tomorrow." : "Get Accumulator Tips for this League"}
+                    onClick={(e) => { e.stopPropagation(); onCopyLeagueMatches(leagueFixtures); }}
+                    className="p-2 rounded-full text-gray-500 dark:text-brand-secondary hover:bg-gray-200 dark:hover:bg-brand-primary focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-brand-accent dark:focus:ring-offset-brand-surface flex items-center justify-center"
+                    title="Copy Match List (Home vs Away)"
                   >
-                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                      <path d="M7 3a1 1 0 000 2h6a1 1 0 100-2H7zM4 7a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1zM2 11a1 1 0 011-1h14a1 1 0 110 2H3a1 1 0 01-1-1z" />
-                    </svg>
+                    <span className="material-symbols-rounded text-xl">content_copy</span>
                   </button>
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className={`h-6 w-6 text-gray-500 dark:text-brand-secondary transform transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
+                  <span 
+                    className={`material-symbols-rounded text-2xl text-gray-500 dark:text-brand-secondary transform transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}
                   >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
+                    expand_more
+                  </span>
                 </div>
               </div>
               {isOpen && (

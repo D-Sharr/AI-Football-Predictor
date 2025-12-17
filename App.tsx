@@ -1,7 +1,8 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Fixture, PredictionState, BatchPrediction } from './types';
 import { getDailyFixtures, clearCacheForDate } from './services/footballApiService';
-import { getLeaguePredictions, getAccumulatorPrediction } from './services/geminiService';
+import { getLeaguePredictions } from './services/geminiService';
 import { canMakeApiCall, recordApiCall } from './services/usageTracker';
 import Header from './components/Header';
 import FixtureList from './components/FixtureList';
@@ -10,7 +11,6 @@ import DateNavigator from './components/DateNavigator';
 import LeagueFilter from './components/LeagueFilter';
 import { PREFERRED_LEAGUE_IDS } from './constants';
 import { getContinent, continentSortOrder } from './utils';
-import AccumulatorModal from './components/AccumulatorModal';
 
 const App: React.FC = () => {
   const [fixtures, setFixtures] = useState<Fixture[]>([]);
@@ -32,13 +32,6 @@ const App: React.FC = () => {
 
   // State to hold all predictions, keyed by fixture ID
   const [predictions, setPredictions] = useState<{ [key: number]: PredictionState }>({});
-
-  const [accumulatorState, setAccumulatorState] = useState<{
-    isLoading: boolean;
-    data: string | null;
-    error: string | null;
-    leagueName: string | null;
-  }>({ isLoading: false, data: null, error: null, leagueName: null });
 
   const updateApiUsage = useCallback(() => {
     setIsApiLimitReached(!canMakeApiCall());
@@ -237,28 +230,14 @@ const App: React.FC = () => {
 }, [predictions, isApiLimitReached, updateApiUsage]);
 
 
-  const handleGetAccumulatorTips = useCallback(async (fixturesInLeague: Fixture[], leagueName: string) => {
-    if (isApiLimitReached) {
-      setAccumulatorState({ isLoading: false, data: null, error: NO_MORE_FREE_PLAN_ERROR, leagueName });
-      return;
-    }
-    recordApiCall();
-    updateApiUsage();
-
-    setAccumulatorState({ isLoading: true, data: null, error: null, leagueName });
-    try {
-        const result = await getAccumulatorPrediction(fixturesInLeague, leagueName);
-        setAccumulatorState({ isLoading: false, data: result, error: null, leagueName });
-    } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : "An unknown error occurred while generating accumulator tips.";
-        setAccumulatorState({ isLoading: false, data: null, error: errorMessage, leagueName });
-    }
-  }, [isApiLimitReached, updateApiUsage]);
-
-  const closeAccumulatorModal = () => {
-    setAccumulatorState({ isLoading: false, data: null, error: null, leagueName: null });
-  };
-
+  const handleCopyLeagueMatches = useCallback((fixturesInLeague: Fixture[]) => {
+    const textList = fixturesInLeague.map(f => `${f.teams.home.name} vs ${f.teams.away.name}`).join('\n');
+    navigator.clipboard.writeText(textList).then(() => {
+        alert("Match list copied to clipboard!");
+    }).catch(err => {
+        console.error('Failed to copy: ', err);
+    });
+  }, []);
 
   return (
     <div className="min-h-screen font-sans">
@@ -314,21 +293,12 @@ const App: React.FC = () => {
               fixtures={filteredFixtures} 
               predictions={predictions}
               onAnalyzeLeague={handleAnalyzeLeague}
-              onGetAccumulatorTips={handleGetAccumulatorTips}
+              onCopyLeagueMatches={handleCopyLeagueMatches}
               isApiLimitReached={isApiLimitReached}
             />
           </>
         )}
       </main>
-      {accumulatorState.leagueName && (
-        <AccumulatorModal
-            isLoading={accumulatorState.isLoading}
-            data={accumulatorState.data}
-            error={accumulatorState.error}
-            leagueName={accumulatorState.leagueName}
-            onClose={closeAccumulatorModal}
-        />
-      )}
     </div>
   );
 };

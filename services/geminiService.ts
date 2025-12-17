@@ -1,3 +1,4 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { Fixture, PredictionResult, BatchPrediction } from "../types";
 
@@ -9,69 +10,61 @@ const singlePredictionSchema = {
   properties: {
     safeTip: {
       type: Type.OBJECT,
-      description: "The single safest betting tip with a very high probability of success, suitable for accumulators.",
+      description: "The single safest betting tip (Win/Draw or Over/Under only) with high probability.",
       properties: {
-        bet: { type: Type.STRING, description: "The type of bet (e.g., 'Match Result', 'Total Goals')." },
-        value: { type: Type.STRING, description: "The predicted outcome (e.g., 'W1', 'TO 2.5')." },
-        confidence: { type: Type.INTEGER, description: "Confidence level from 0 to 100." },
+        bet: { type: Type.STRING, description: "The type of bet (Match Result, Double Chance, or Total Goals)." },
+        value: { type: Type.STRING, description: "The outcome abbreviation (W1, X, W2, 1X, 12, 2X, TO, TU)." },
+        confidence: { type: Type.INTEGER, description: "Confidence level 0-100." },
       },
       required: ["bet", "value", "confidence"],
     },
     valueTip: {
       type: Type.OBJECT,
-      description: "A tip that represents excellent value. This is a well-reasoned bet where the AI's analysis indicates a higher probability of success than typical market odds might suggest, offering a powerful and accurate betting opportunity.",
+      description: "A value tip focused on Win/Draw or Over/Under markets.",
       properties: {
-        bet: { type: Type.STRING, description: "The type of bet (e.g., 'Match Result', 'Total Goals')." },
-        value: { type: Type.STRING, description: "The predicted outcome (e.g., 'W1', 'TO 2.5')." },
-        confidence: { type: Type.INTEGER, description: "Confidence level from 0 to 100." },
+        bet: { type: Type.STRING, description: "The type of bet." },
+        value: { type: Type.STRING, description: "The outcome abbreviation." },
+        confidence: { type: Type.INTEGER, description: "Confidence level 0-100." },
       },
       required: ["bet", "value", "confidence"],
     },
     tips: {
       type: Type.ARRAY,
-      description: "A list of various betting tips with their confidence levels.",
+      description: "A list of 6-10 betting tips focusing ONLY on Win/Draw/Double Chance and Goal Over/Under.",
       items: {
         type: Type.OBJECT,
         properties: {
-          bet: { type: Type.STRING, description: "The type of bet." },
-          value: { type: Type.STRING, description: "The predicted outcome for the bet." },
-          confidence: { type: Type.INTEGER, description: "Confidence level from 0 to 100." },
+          bet: { type: Type.STRING },
+          value: { type: Type.STRING },
+          confidence: { type: Type.INTEGER },
         },
         required: ["bet", "value", "confidence"],
       },
     },
     analysis: {
       type: Type.STRING,
-      description: "A detailed, professional analysis of the match in Markdown format, covering team form, tactics, key players, and reasoning for the prediction.",
+      description: "Professional match analysis using KP Astrology (Krishnamurti Paddhati) logic in Markdown format.",
     },
     correctScores: {
       type: Type.ARRAY,
-      description: "A list of the three most likely correct scores for the match.",
-      items: {
-        type: Type.STRING,
-        description: "A correct score prediction, e.g., '2-1'."
-      }
+      description: "Three most likely goals/correct scores based on astrological significators.",
+      items: { type: Type.STRING }
     }
   },
   required: ["safeTip", "valueTip", "tips", "analysis", "correctScores"],
 };
-
 
 const batchResponseSchema = {
   type: Type.ARRAY,
   items: {
     type: Type.OBJECT,
     properties: {
-      fixtureId: {
-        type: Type.INTEGER,
-        description: "The unique ID of the fixture being analyzed."
-      },
+      fixtureId: { type: Type.INTEGER },
       prediction: singlePredictionSchema,
     },
     required: ["fixtureId", "prediction"],
   }
 };
-
 
 export async function getLeaguePredictions(
   fixtures: Fixture[],
@@ -80,86 +73,63 @@ export async function getLeaguePredictions(
   onComplete: () => void
 ) {
   const fixtureList = fixtures.map(f =>
-    `- **Match:** ${f.teams.home.name} vs ${f.teams.away.name} (${f.league.name})\n  - **Fixture ID:** ${f.fixture.id}\n  - **Date:** ${new Date(f.fixture.date).toUTCString()}`
+    `- **Match:** ${f.teams.home.name} vs ${f.teams.away.name} (${f.league.name})\n  - **ID:** ${f.fixture.id}\n  - **Time:** ${f.fixture.date}`
   ).join('\n');
 
   const prompt = `
-You are a world-class professional football analyst providing expert betting insights. Analyze ALL of the following matches and return your analysis in a structured JSON array format. Your knowledge is up-to-date.
+You are an expert football analyst and a master of Krishnamurti Paddhati (KP) Astrology. 
+Your task is to analyze the following matches and provide predictions focusing EXCLUSIVELY on:
+1. Match Results (W1, X, W2)
+2. Double Chance (1X, 12, 2X)
+3. Total Goals Over/Under (TO/TU)
+4. Most Likely Correct Scores (Goals Prediction)
 
-**Matches to Analyze:**
+**KP Astrology Methodology:**
+- Home team = 1st House (Lagna); Away team = 7th House.
+- Analysis of 6th House (Victory) and 11th House (Gain).
+- The number of goals is determined by the strength of the 2nd (wealth/gain) and 5th (creativity/play) cusps in relation to the main significators.
+- Use the match start time for the Horary chart.
+- Combine astrological insights with team form.
+
+**Matches:**
 ${fixtureList}
 
-**Your Task:**
-For EACH match in the list, perform a comprehensive analysis by considering the following critical factors:
-- Current Form & Momentum
-- Head-to-Head (H2H) Deep Dive
-- Team News, Injuries & Suspensions
-- League Context & Motivation
-- Tactical Matchup
+**Output Requirements:**
+- Provide tips ONLY for Match Result, Double Chance, and Over/Under.
+- Include the "correctScores" property with the 3 most likely goal outcomes (e.g., "2-1", "1-1", "0-2").
+- Provide a detailed "KP Astrology Analysis" for each match.
 
-Based on your analysis for each match, provide:
-1.  A list of 10-15 varied betting tips with confidence scores.
-2.  A single "Safe Tip" for accumulators.
-3.  A "Value Tip" representing a mispriced opportunity.
-4.  A detailed, professional match preview in Markdown.
-5.  A list of the three most likely correct scores.
-
-**JSON Output Instructions & Value Formatting:**
-Return ONLY a single JSON array. Each element in the array must be an object corresponding to one of the matches provided.
-Each object in the array MUST conform to the following schema:
-{
-  "fixtureId": <The integer ID of the fixture>,
-  "prediction": { ... the detailed prediction object ... }
-}
-The 'prediction' object must contain 'safeTip', 'valueTip', 'tips', 'analysis', and 'correctScores'. The analysis must be a single string with markdown formatting.
-**Crucially, for the 'value' field in all tips, you MUST use the following standardized abbreviations. Do NOT use team names or descriptive text.**
-- **Match Result:** Use 'W1' for Home Win, 'X' for Draw, 'W2' for Away Win.
-- **Double Chance:** Use '1X' for Home Win or Draw, '12' for Home or Away Win, '2X' for Away Win or Draw.
-- **BTTS (Both Teams to Score):** Use 'BTTS' for Yes, and 'BTTS-NO' for No.
-- **Total Goals:** Use 'TO' for Over and 'TU' for Under, followed by the goal line (e.g., 'TO 2.5', 'TU 1.5').
-- **Team Total Goals:** Use '1TO'/'1TU' for Home Team Over/Under and '2TO'/'2TU' for Away Team Over/Under (e.g., '1TO 1.5').
-- **Total Corners:** Use 'CO' for Over and 'CU' for Under, followed by the line (e.g., 'CO 9.5').
-- **Team Corners:** Use '1CO'/'1CU' for Home Team Over/Under and '2CO'/'2CU' for Away Team Over/Under (e.g., '2CU 4.5').
-- **HT/FT Result:** Use 'W1/W1', 'W1/X', 'X/W2', etc.
-- **Asian Handicap:** Use 'H' for Home team and 'A' for Away team, followed by the line (e.g., 'H -0.5', 'A +1.0').
-- **Correct Score:** Provide the score (e.g., '2-1', '1-1').
+Return a JSON array conforming to the provided schema.
 `;
 
   try {
     const response = await ai.models.generateContentStream({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-pro',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
         responseSchema: batchResponseSchema,
+        thinkingConfig: { thinkingBudget: 4000 }
       },
     });
 
     let buffer = '';
     for await (const chunk of response) {
       buffer += chunk.text;
-      
       let lastProcessedIndex = 0;
       while (true) {
         const objectStartIndex = buffer.indexOf('{', lastProcessedIndex);
         if (objectStartIndex === -1) break;
-
         let braceCount = 1;
         let objectEndIndex = -1;
-        // Search for the matching closing brace, respecting nested braces
         for (let i = objectStartIndex + 1; i < buffer.length; i++) {
-          const char = buffer[i];
-          if (char === '{') {
-            braceCount++;
-          } else if (char === '}') {
-            braceCount--;
-          }
+          if (buffer[i] === '{') braceCount++;
+          else if (buffer[i] === '}') braceCount--;
           if (braceCount === 0) {
             objectEndIndex = i;
             break;
           }
         }
-
         if (objectEndIndex !== -1) {
           const jsonString = buffer.substring(objectStartIndex, objectEndIndex + 1);
           try {
@@ -167,70 +137,30 @@ The 'prediction' object must contain 'safeTip', 'valueTip', 'tips', 'analysis', 
             if (parsedObject.fixtureId && parsedObject.prediction) {
                onPredictionReceived(parsedObject);
                lastProcessedIndex = objectEndIndex + 1;
-            } else {
-               break; 
-            }
-          } catch (e) {
-            // Incomplete JSON object in buffer, wait for more chunks
-            break;
-          }
-        } else {
-          // No complete object found yet, wait for more chunks
-          break;
-        }
+            } else break;
+          } catch { break; }
+        } else break;
       }
-      
-      if (lastProcessedIndex > 0) {
-        buffer = buffer.substring(lastProcessedIndex);
-      }
+      if (lastProcessedIndex > 0) buffer = buffer.substring(lastProcessedIndex);
     }
   } catch (error) {
     console.error("Gemini API stream failed:", error);
-    onError(new Error("An error occurred while streaming league predictions."));
+    onError(new Error("Analysis failed. Please try again."));
   } finally {
     onComplete();
   }
 }
 
-export async function getAccumulatorPrediction(fixtures: Fixture[], leagueName: string): Promise<string> {
-  const fixtureList = fixtures.map(f => `- ${f.teams.home.name} vs ${f.teams.away.name}`).join('\n');
-
-  const prompt = `
-You are an expert football betting analyst who specializes in creating accumulator (parlay) bets. Your task is to analyze the provided list of matches for the **${leagueName}** and create two distinct accumulator bets with detailed justifications.
-
-**Matches for Analysis:**
-${fixtureList}
-
-**Your Task:**
-1.  **Analyze All Matches:** Briefly consider the likely outcomes for all provided matches based on general knowledge of team strength, form, and league context.
-2.  **Create a "Safe Accumulator":**
-    *   Select 2-4 matches from the list.
-    *   Choose predictions with a very high probability of success (e.g., strong favorites to win, 'Over 1.5 Goals' in a high-scoring matchup, Double Chance '1X' for a dominant home team).
-    *   The goal is a low-risk, modest-return bet.
-    *   Provide a detailed rationale for why you chose each specific leg of the accumulator.
-3.  **Create a "Value Accumulator":**
-    *   Select 3-5 matches from the list.
-    *   Look for value where the market odds might be underestimated. This could include a draw, an underdog on a double chance, a specific 'Both Teams to Score' bet, or a slightly riskier 'Over 2.5 Goals' bet.
-    *   The goal is a higher-risk, high-reward bet.
-    *   Provide a detailed rationale for your selections, explaining where you see the value.
-
-**Output Format:**
-- Use Markdown for formatting.
-- Use '###' for the titles: '### Safe Accumulator' and '### Value Accumulator'.
-- Use bullet points ('*') to list the selections for each accumulator.
-- For each selection, clearly state the match and the bet (e.g., '* **Man City vs Arsenal:** Man City to Win (W1)').
-- Follow the list of selections with a paragraph titled '**Rationale:**' explaining your strategy.
-- Return ONLY the Markdown text. Do not include any other text or introductions.
-`;
+export async function translateText(text: string, targetLanguage: string): Promise<string> {
+  const prompt = `Translate the following football match analysis to ${targetLanguage}. Keep the tone professional and astrological. Maintain the Markdown formatting.\n\n${text}`;
   try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: prompt,
-      });
-
-      return response.text;
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: prompt,
+    });
+    return response.text || text;
   } catch (error) {
-      console.error("Gemini accumulator API call failed:", error);
-      throw new Error("An error occurred while generating the accumulator tips.");
+    console.error("Translation failed:", error);
+    return text; // Return original on failure
   }
 }

@@ -1,5 +1,5 @@
 {
-  "name": "AI Football Predictor",
-  "description": "Get daily football match fixtures from top leagues and receive AI-powered predictions, analysis, and betting tips for each game using Google's Gemini API.",
+  "name": "KP Astrology Football Predictor",
+  "description": "Expert football match analysis combining statistical data with Krishnamurti Paddhati (KP Astrology) principles. Focusing on Win/Draw and Goal Over/Under predictions.",
   "requestFramePermissions": []
 }
